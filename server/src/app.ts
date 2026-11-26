@@ -8,6 +8,7 @@ import { csrfHeaderHook } from "./middleware/csrf-header-hook.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { globalRateLimit } from "./middleware/rate-limit.js";
 import { requestId } from "./middleware/request-id.js";
+import { asyncHandler } from "./utils/async-handler.js";
 import { httpLogger } from "./utils/logger.js";
 import { ApiError } from "./utils/api-error.js";
 import { ok } from "./utils/response.js";
@@ -43,13 +44,13 @@ app.get("/api/health", (_request, response) => {
   ok(response, { status: "ok" });
 });
 
-app.get("/api/ready", (_request, response, next) => {
+app.get("/api/ready", asyncHandler(async (_request, response, next) => {
   if (!isDatabaseReady()) {
     next(new ApiError(503, "INTERNAL", "Service not ready"));
     return;
   }
   ok(response, { status: "ready" });
-});
+}));
 
 app.use("/api/auth", authRouter);
 app.use("/api/onboarding", onboardingRouter);

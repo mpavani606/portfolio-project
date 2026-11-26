@@ -8,6 +8,7 @@ import { errorHandler } from "../middleware/error-handler.js";
 import { validate } from "../middleware/validate.js";
 import { parseEnvironment } from "../config/env.js";
 import { ApiError } from "../utils/api-error.js";
+import { asyncHandler } from "../utils/async-handler.js";
 import { ok } from "../utils/response.js";
 
 describe("API foundation", () => {
@@ -61,6 +62,25 @@ describe("API foundation", () => {
     testApp.use(errorHandler);
 
     const response = await request(testApp).get("/failure");
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      success: false,
+      error: { code: "FORBIDDEN", message: "Access denied" },
+    });
+  });
+
+  it("forwards rejected async handlers to the central error envelope", async () => {
+    const testApp = express();
+    testApp.get(
+      "/async-failure",
+      asyncHandler(async () => {
+        throw new ApiError(403, "FORBIDDEN", "Access denied");
+      }),
+    );
+    testApp.use(errorHandler);
+
+    const response = await request(testApp).get("/async-failure");
 
     expect(response.status).toBe(403);
     expect(response.body).toEqual({

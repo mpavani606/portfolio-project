@@ -66,6 +66,7 @@ server/src/
     express.d.ts
   utils/
     api-error.ts
+    async-handler.ts
     cookies.ts
     logger.ts
     request-context.ts
@@ -183,7 +184,7 @@ Environment: Node `v26.8.2`, npm `11.19.1`; MongoDB was already available at `12
 | Install | `npm ci --no-audit --no-fund` | Exit 0; 339 packages restored. npm warned that the locked ESLint version is deprecated and that esbuild's install script is not approved by the local install-script policy. |
 | Lint | `npm run lint` | Passed; exit 0. |
 | Typecheck | `npm run typecheck` | Passed; exit 0. |
-| Tests | `npm test` | Passed; 3 files and 22 tests. Includes CRUD, tenant isolation for all portfolio models, public filtering/privacy, upload validation, contact rate limiting, production asset-origin validation, and publish/unpublish behavior. |
+| Tests | `npm test` | Passed; 3 files and 23 tests. Includes CRUD, tenant isolation for all portfolio models, public filtering/privacy, upload validation, contact rate limiting, production asset-origin validation, async-handler forwarding, and publish/unpublish behavior. |
 | Build | `npm run build` | Passed; exit 0. |
 | Production dependency audit | `npm audit --omit=dev` | Passed; 0 production dependency vulnerabilities reported. |
 | Full dependency audit | `npm audit` | Exit 1; reported 3 development dependency findings (1 moderate, 2 critical) in the Vitest/`@vitest/mocker`/`tinypool` chain. The suggested forced fix requires a breaking Vitest 5 upgrade; no test-runner major upgrade was made here. |
