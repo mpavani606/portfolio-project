@@ -1,0 +1,1580 @@
+openapi: 3.1.0
+info:
+  title: QM Portfolio API
+  version: 0.3.0
+  description: >-
+    Backend foundation, authentication, workspace onboarding, tenant-scoped portfolio
+    CMS, image uploads, and public portfolio endpoints. Unsafe requests require the
+    double-submit CSRF header.
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: System
+  - name: Authentication
+  - name: Onboarding
+  - name: Owner
+  - name: Public Portfolio
+  - name: Uploads
+paths:
+  /api/health:
+    get:
+      tags: [System]
+      summary: Liveness probe
+      responses:
+        "200":
+          description: The API process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/ready:
+    get:
+      tags: [System]
+      summary: Readiness probe
+      responses:
+        "200":
+          description: The API is ready to serve requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: MongoDB is not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/csrf:
+    get:
+      tags: [Authentication]
+      summary: Issue a CSRF double-submit token
+      responses:
+        "200":
+          description: Token returned and set in the readable qm_csrf cookie.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [token]
+                    properties:
+                      token:
+                        type: string
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a regular user
+      description: Any submitted role field is ignored; the new account is always a regular user.
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "202":
+          description: Registration accepted; verification instructions are sent when applicable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/verify-email:
+    post:
+      tags: [Authentication]
+      summary: Verify an email address with its one-time token
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  $ref: "#/components/schemas/ActionToken"
+      responses:
+        "200":
+          description: Email verified; returns only the public user DTO.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [verified, user]
+                    properties:
+                      verified:
+                        const: true
+                      user:
+                        $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/resend-verification:
+    post:
+      tags: [Authentication]
+      summary: Resend email verification instructions
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate and create a server-side session
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Sets the HttpOnly qm_session cookie and returns whitelisted DTOs.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [user, tenant]
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+                      tenant:
+                        oneOf:
+                          - $ref: "#/components/schemas/Tenant"
+                          - type: "null"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke the current session and clear its cookie
+      security:
+        - csrfToken: []
+      responses:
+        "200":
+          description: Session revoked when present and session cookie cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [loggedOut]
+                    properties:
+                      loggedOut:
+                        const: true
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Return the current user and optional workspace
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Current identity returned as whitelisted DTOs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [user, tenant]
+                    properties:
+                      user:
+                        $ref: "#/components/schemas/User"
+                      tenant:
+                        oneOf:
+                          - $ref: "#/components/schemas/Tenant"
+                          - type: "null"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Request password reset instructions
+      description: Always responds with the same message whether the account exists or not.
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Set a new password with a one-time reset token
+      description: Revokes all existing sessions after a successful reset.
+      security:
+        - csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  $ref: "#/components/schemas/ActionToken"
+                password:
+                  $ref: "#/components/schemas/Password"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/auth/change-password:
+    post:
+      tags: [Authentication]
+      summary: Change the current user's password
+      description: Requires the current password and revokes existing sessions.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                  minLength: 1
+                  maxLength: 72
+                newPassword:
+                  $ref: "#/components/schemas/Password"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/onboarding/slug-available:
+    get:
+      tags: [Onboarding]
+      summary: Check whether a workspace slug can be used
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: slug
+          required: true
+          schema:
+            $ref: "#/components/schemas/Slug"
+      responses:
+        "200":
+          description: Reserved slugs are reported unavailable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [slug, available]
+                    properties:
+                      slug:
+                        $ref: "#/components/schemas/Slug"
+                      available:
+                        type: boolean
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/onboarding/workspace:
+    post:
+      tags: [Onboarding]
+      summary: Create the authenticated user's single workspace
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, displayName]
+              properties:
+                slug:
+                  $ref: "#/components/schemas/Slug"
+                displayName:
+                  type: string
+                  minLength: 2
+                  maxLength: 100
+      responses:
+        "200":
+          description: Workspace created from authenticated session identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    $ref: "#/components/schemas/CreatedTenant"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/owner/overview:
+    get:
+      tags: [Owner]
+      summary: Return the authenticated workspace checklist and counts
+      description: Counts and checklist are computed from the authenticated workspace's persisted portfolio records.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Counts and checklist are scoped to the session's active workspace.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    const: true
+                  data:
+                    type: object
+                    required: [tenantId, counts, checklist]
+                    properties:
+                      tenantId:
+                        type: string
+                      counts:
+                        type: object
+                        required: [education, projects, certificates, assets, skills, achievements, careerEntries, goals, messages]
+                        properties:
+                          education:
+                            type: integer
+                            minimum: 0
+                          projects:
+                            type: integer
+                            minimum: 0
+                          certificates:
+                            type: integer
+                            minimum: 0
+                          assets:
+                            type: integer
+                            minimum: 0
+                          skills:
+                            type: integer
+                            minimum: 0
+                          achievements:
+                            type: integer
+                            minimum: 0
+                          careerEntries:
+                            type: integer
+                            minimum: 0
+                          goals:
+                            type: integer
+                            minimum: 0
+                          messages:
+                            type: integer
+                            minimum: 0
+                      checklist:
+                        type: object
+                        required: [profileComplete, professionalLinksConfigured, portfolioPublished]
+                        properties:
+                          profileComplete:
+                            type: boolean
+                          professionalLinksConfigured:
+                            type: boolean
+                          portfolioPublished:
+                            type: boolean
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/owner/profile:
+    get:
+      tags: [Owner]
+      summary: Read the authenticated workspace profile
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Owner profile DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Owner]
+      summary: Create or replace the authenticated workspace profile
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileInput"
+      responses:
+        "200":
+          description: Persisted owner profile DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/owner/profile/publish:
+    patch:
+      tags: [Owner]
+      summary: Publish or unpublish the workspace profile
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "200":
+          description: Updated owner profile DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/owner/{resource}:
+    parameters:
+      - $ref: "#/components/parameters/OwnerResource"
+    get:
+      tags: [Owner]
+      summary: List a tenant-scoped portfolio resource
+      description: Resource is one of projects, skills, achievements, career, or goals.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [planning, development, testing, completed, on_hold, cancelled, learning, practicing, needs_refresh, certificate, hackathon, training, education, award, public, private, experience, not_started, in_progress, new, read, archived]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            maxLength: 40
+      responses:
+        "200":
+          description: Paginated, tenant-scoped resource DTOs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Owner]
+      summary: Create a portfolio resource for the authenticated workspace
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/ProjectInput"
+                - $ref: "#/components/schemas/SkillInput"
+                - $ref: "#/components/schemas/AchievementInput"
+                - $ref: "#/components/schemas/CareerEntryInput"
+                - $ref: "#/components/schemas/GoalInput"
+      responses:
+        "201":
+          description: Created resource DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/owner/{resource}/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OwnerResource"
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      tags: [Owner]
+      summary: Read one tenant-scoped portfolio resource
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Owner resource DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Owner]
+      summary: Update one tenant-scoped portfolio resource
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortfolioUpdate"
+      responses:
+        "200":
+          description: Updated resource DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Owner]
+      summary: Delete one tenant-scoped portfolio resource
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/{resource}/{id}/publish:
+    parameters:
+      - $ref: "#/components/parameters/OwnerResource"
+      - $ref: "#/components/parameters/ResourceId"
+    patch:
+      tags: [Owner]
+      summary: Publish or unpublish one tenant-scoped resource
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "200":
+          description: Updated resource DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/projects/reorder:
+    patch:
+      tags: [Owner]
+      summary: Reorder projects belonging to the authenticated workspace
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projects]
+              properties:
+                projects:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [id, sortOrder]
+                    properties:
+                      id:
+                        type: string
+                        pattern: "^[a-fA-F0-9]{24}$"
+                      sortOrder:
+                        type: integer
+      responses:
+        "200":
+          description: Reordered project DTOs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/messages:
+    get:
+      tags: [Owner]
+      summary: List the authenticated workspace contact inbox
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, read, archived]
+      responses:
+        "200":
+          description: Paginated inbox DTOs; internal IP hashes are omitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioListResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/owner/messages/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    patch:
+      tags: [Owner]
+      summary: Mark a contact message read or archived
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [read, archived]
+      responses:
+        "200":
+          description: Updated inbox DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Owner]
+      summary: Delete a contact message from the authenticated workspace
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/uploads/image:
+    post:
+      tags: [Uploads]
+      summary: Upload and metadata-strip an image
+      description: JPEG, PNG, or WebP input up to 5 MB; output is re-encoded as WebP.
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Tenant-scoped asset DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/public/assets/{key}:
+    get:
+      tags: [Public Portfolio]
+      summary: Read an asset only while referenced by published content
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: WebP image bytes.
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/profile:
+    get:
+      tags: [Public Portfolio]
+      summary: Read a published public profile
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+      responses:
+        "200":
+          description: Whitelisted profile DTO respecting public field settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/projects:
+    get:
+      tags: [Public Portfolio]
+      summary: List published projects
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Paginated, published project DTOs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioListResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/projects/{projectSlug}:
+    get:
+      tags: [Public Portfolio]
+      summary: Read one published project by slug
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+        - name: projectSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Whitelisted public project DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/skills:
+    get:
+      tags: [Public Portfolio]
+      summary: List published skills
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          $ref: "#/components/responses/PortfolioList"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/achievements:
+    get:
+      tags: [Public Portfolio]
+      summary: List published achievements with public visibility
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          $ref: "#/components/responses/PortfolioList"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/career:
+    get:
+      tags: [Public Portfolio]
+      summary: List published career entries
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          $ref: "#/components/responses/PortfolioList"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/goals:
+    get:
+      tags: [Public Portfolio]
+      summary: List published goals
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          $ref: "#/components/responses/PortfolioList"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/contact:
+    post:
+      tags: [Public Portfolio]
+      summary: Submit a public contact message
+      description: Requires the CSRF double-submit header; honeypot submissions are accepted but not stored.
+      security:
+        - csrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactMessageInput"
+      responses:
+        "202":
+          $ref: "#/components/responses/Accepted"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: qm_session
+    csrfToken:
+      type: apiKey
+      in: header
+      name: x-csrf-token
+  responses:
+    Error:
+      description: Standard API error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Message:
+      description: Successful generic message response.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/MessageResponse"
+    PortfolioList:
+      description: Paginated portfolio records.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PortfolioListResponse"
+    Deleted:
+      description: Resource deletion result.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DeletedResponse"
+    Accepted:
+      description: Contact submission accepted.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AcceptedResponse"
+  parameters:
+    OwnerResource:
+      name: resource
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [projects, skills, achievements, career, goals]
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-fA-F0-9]{24}$"
+    PublicSlug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Slug"
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000000
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  schemas:
+    HealthResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              const: ok
+    ReadyResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              const: ready
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, RATE_LIMITED, INTERNAL]
+            message:
+              type: string
+            fields:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+    MessageResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required: [message]
+          properties:
+            message:
+              type: string
+    User:
+      type: object
+      required: [id, email, role, isVerified, createdAt]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, superadmin]
+        isVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    Tenant:
+      type: object
+      required: [id, slug, displayName, status]
+      properties:
+        id:
+          type: string
+        slug:
+          $ref: "#/components/schemas/Slug"
+        displayName:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended]
+    CreatedTenant:
+      allOf:
+        - $ref: "#/components/schemas/Tenant"
+        - type: object
+          required: [ownerId]
+          properties:
+            ownerId:
+              type: string
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          $ref: "#/components/schemas/Password"
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 1
+          maxLength: 72
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+    Password:
+      type: string
+      minLength: 12
+      maxLength: 72
+    ActionToken:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{43}$"
+    Slug:
+      type: string
+      minLength: 3
+      maxLength: 30
+      pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    PortfolioObjectResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          additionalProperties: true
+    PortfolioListResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success:
+          const: true
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        meta:
+          type: object
+          required: [page, limit, total, pages]
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            pages:
+              type: integer
+    DeletedResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [deleted]
+          properties:
+            deleted:
+            type: boolean
+            const: true
+    AcceptedResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [accepted]
+          properties:
+            accepted:
+            type: boolean
+            const: true
+    PublishRequest:
+      type: object
+      required: [publishState]
+      properties:
+        publishState:
+          type: string
+          enum: [draft, published]
+    ProfileInput:
+      type: object
+      required: [fullName]
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        headline:
+          type: string
+          maxLength: 200
+        bio:
+          type: string
+          maxLength: 20000
+        location:
+          type: string
+          maxLength: 160
+        avatarAsset:
+          type: [string, "null"]
+        socialLinks:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [label, url]
+            properties:
+              label:
+                type: string
+                maxLength: 40
+              url:
+                type: string
+                format: uri
+        contactEmail:
+          type: string
+          format: email
+        publicFields:
+          type: object
+          properties:
+            email:
+              type: boolean
+            location:
+              type: boolean
+        defaultLocale:
+          type: string
+    ProjectInput:
+      type: object
+      required: [title, slug]
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 80
+        summary:
+          type: string
+          maxLength: 400
+        description:
+          type: string
+          maxLength: 20000
+        techStack:
+          type: array
+          maxItems: 30
+          items:
+            type: string
+        coverAsset:
+          type: [string, "null"]
+        screenshots:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+        liveUrl:
+          type: string
+          format: uri
+        repoUrl:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum: [planning, development, testing, completed, on_hold, cancelled]
+        featured:
+          type: boolean
+        sortOrder:
+          type: integer
+    SkillInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        category:
+          type: string
+          maxLength: 80
+        status:
+          type: string
+          enum: [learning, practicing, completed, needs_refresh]
+        progressSelfReported:
+          type: integer
+          minimum: 0
+          maximum: 100
+        evidenceProjectIds:
+          type: array
+          items:
+            type: string
+    AchievementInput:
+      type: object
+      required: [title, type]
+      properties:
+        title:
+          type: string
+          maxLength: 160
+        type:
+          type: string
+          enum: [certificate, hackathon, training, education, award]
+        issuer:
+          type: string
+        credentialId:
+          type: string
+        issueDate:
+          type: string
+          format: date
+        expiryDate:
+          type: string
+          format: date
+        verificationUrl:
+          type: string
+          format: uri
+        evidenceAsset:
+          type: [string, "null"]
+        visibility:
+          type: string
+          enum: [public, private]
+    CareerEntryInput:
+      type: object
+      required: [kind, title]
+      properties:
+        kind:
+          type: string
+          enum: [education, experience, learning]
+        title:
+          type: string
+          maxLength: 160
+        organization:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        description:
+          type: string
+    GoalInput:
+      type: object
+      required: [title, horizon]
+      properties:
+        title:
+          type: string
+        horizon:
+          type: string
+          enum: [short, medium, long]
+        targetDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [not_started, in_progress, completed, on_hold]
+        description:
+          type: string
+        relatedTechnologies:
+          type: array
+          items:
+            type: string
+    ContactMessageInput:
+      type: object
+      required: [name, email, subject, message]
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        subject:
+          type: string
+          maxLength: 160
+        message:
+          type: string
+          maxLength: 5000
+        honeypot:
+          type: string
+          maxLength: 200
+    PortfolioUpdate:
+      type: object
+      description: Partial resource fields; accepted fields depend on the resource path.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        summary:
+          type: string
+        description:
+          type: string
+        techStack:
+          type: array
+          items:
+            type: string
+        coverAsset:
+          type: [string, "null"]
+        screenshots:
+          type: array
+          items:
+            type: string
+        liveUrl:
+          type: string
+          format: uri
+        repoUrl:
+          type: string
+          format: uri
+        status:
+          type: string
+        featured:
+          type: boolean
+        sortOrder:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+        progressSelfReported:
+          type: integer
+        evidenceProjectIds:
+          type: array
+          items:
+            type: string
+        type:
+          type: string
+        issuer:
+          type: string
+        credentialId:
+          type: string
+        issueDate:
+          type: string
+          format: date
+        expiryDate:
+          type: string
+          format: date
+        verificationUrl:
+          type: string
+          format: uri
+        evidenceAsset:
+          type: [string, "null"]
+        visibility:
+          type: string
+          enum: [public, private]
+        kind:
+          type: string
+          enum: [education, experience, learning]
+        organization:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        horizon:
+          type: string
+          enum: [short, medium, long]
+        targetDate:
+          type: string
+          format: date
+        relatedTechnologies:
+          type: array
+          items:
+            type: string

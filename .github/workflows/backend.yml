@@ -1,0 +1,53 @@
+name: Backend
+
+on:
+  push:
+    paths:
+      - "server/**"
+      - "shared/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "eslint.config.js"
+      - "vitest.config.ts"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "shared/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "eslint.config.js"
+      - "vitest.config.ts"
+      - ".github/workflows/backend.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://127.0.0.1:27017/qm-portfolio-test
+      CLIENT_ORIGIN: http://localhost:5173
+      SESSION_SECRET: test-session-secret-with-more-than-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

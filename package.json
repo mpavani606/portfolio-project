@@ -1,0 +1,54 @@
+{
+  "name": "qm-portfolio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch server/src/server.ts",
+    "start": "node dist/server/src/server.js",
+    "lint": "eslint server/src shared eslint.config.js vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc",
+    "seed:admin": "tsx server/src/seed/admin.ts",
+    "seed:demo": "tsx server/src/seed/demo.ts",
+    "seed:demo:clear": "tsx server/src/seed/clear-demo.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1178.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "mongoose": "^8.18.0",
+    "multer": "^2.5.0",
+    "nodemailer": "^10.6.1",
+    "pino": "^9.7.0",
+    "pino-http": "^10.5.0",
+    "sharp": "^0.35.5",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.0",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^24.10.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/supertest": "^6.0.3",
+    "eslint": "^9.30.0",
+    "globals": "^16.3.0",
+    "supertest": "^7.1.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.35.1",
+    "vitest": "^3.2.4"
+  }
+}
