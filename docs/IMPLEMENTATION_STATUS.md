@@ -5,7 +5,7 @@ Audit date: 2026-11-26. This status reflects the verified backend foundation, au
 | Phase | Backend | Frontend | Evidence / scope |
 |---:|---|---|---|
 | 0 | Verified | Not started | Backend repository audit documented; npm checks recorded. |
-| 1 | Verified | Not started | B-2 backend foundation is implemented and verified: app/server split, MongoDB connection, `/api/health`, `/api/ready`, middleware, OpenAPI/API contract, tests, and CI. |
+| 1 | Verified | Not started | B-2 independently rechecked against `01_BACKEND_PROMPTS.md`; full suite passes on patched Vitest 4.1.12, live health/readiness/validation probes pass, and npm audit reports 0 vulnerabilities. |
 | 2 | Verified | Not started | User, Tenant, and Session models; public registration with verification; workspace onboarding; tenant isolation. Public signup scope approved and blueprint updated. |
 | 3 | Verified | Not started | Profile, projects, skills, achievements, career, goals, owner CMS, uploads, publish controls, public APIs, contact inbox, and DEMO seed/cleanup. |
 | 4 | Not started | Not started | Admin account management/tools, including generated R1 IDs and initial credentials for administrator-provisioned accounts. |
@@ -28,18 +28,18 @@ The blueprint defines three releases but no numbered 0–16 phase plan. The numb
 
 | Check | Command | Result |
 |---|---|---|
-| Install | `npm ci --no-audit --no-fund` | Exit 0; 297 packages installed from the lockfile. |
+| Install | `npm ci --no-audit --no-fund` | Exit 0; 335 packages installed from the updated lockfile. npm warned that ESLint 9.39.5 is deprecated and esbuild's install script is not approved by the local install-script policy. |
 | Lint | `npm run lint` | Passed; exit 0. |
 | Typecheck | `npm run typecheck` | Passed; exit 0. |
-| Test | `npm test` | Passed; 1 file and 7 tests. |
+| Test | `npm test` | Passed; 6 files and 46 tests on Vitest 4.1.12. |
 | Build | `npm run build` | Passed; exit 0. |
-| Smoke | `npm start` after build; `curl.exe --fail-with-body --silent --show-error` against `/api/health` and `/api/ready` | Server connected to MongoDB and listened on port 3000; both probes returned HTTP 200. |
+| Live smoke | One-shot `node --import tsx --input-type=module` server on port 43128 | `/api/health` and connected `/api/ready` returned HTTP 200; invalid registration returned HTTP 400 `VALIDATION_ERROR` with field errors; after disconnecting Mongoose, `/api/ready` returned HTTP 503 with a generic error and no database details. |
 
-When MongoDB is disconnected, Supertest verifies `/api/ready` returns HTTP 503 with no connection details. The already-running shared MongoDB service was not stopped for the smoke test. See [ARCHITECTURE_BACKEND.md](ARCHITECTURE_BACKEND.md) for exact commands, route/model inventory, and confirmed scope additions.
+Supertest also verifies the not-ready response and invalid-environment failure. The already-running shared MongoDB service was not stopped; the live check disconnected the app's Mongoose connection. See [ARCHITECTURE_BACKEND.md](ARCHITECTURE_BACKEND.md) for exact commands, route/model inventory, and confirmed scope additions.
 
 ## B-2 completion record (Phase 1)
 
-**Status: Implemented and verified.** The app is importable without listening (`server/src/app.ts`); the server entry point connects to MongoDB, listens, and handles graceful shutdown (`server/src/server.ts`). Both system endpoints are mounted in `app.ts`.
+**Status: VERIFIED (independently rechecked 2026-11-26).** The complete B-2 requirements in `01_BACKEND_PROMPTS.md` were checked against the implementation. The app is importable without listening (`server/src/app.ts`); the server entry point connects to MongoDB, listens, and handles graceful shutdown (`server/src/server.ts`). Both system endpoints are mounted in `app.ts`; rejected asynchronous handlers are forwarded through the tested `asyncHandler` utility. Middleware, env validation, response/error contracts, CSRF hook, root scripts, CI, and required Supertest coverage are present.
 
 | Method and route | Request | Verified response |
 |---|---|---|
@@ -51,13 +51,17 @@ The endpoint/method inventory, request/response envelopes and examples are in [A
 
 | Check | Exact command | Result |
 |---|---|---|
-| System endpoint tests | `npx vitest run server/src/tests/app.test.ts` | Passed; 1 file, 8 tests, including liveness, not-ready behavior, 404, error envelope, validation errors, and invalid environment failure. |
-| Live server probes | One-shot `node --import tsx --input-type=module` smoke using `startServer()` and HTTP fetch on port 43127 | MongoDB connected; `/api/health` and `/api/ready` returned HTTP 200 with the documented JSON; server closed and MongoDB disconnected cleanly. |
-| Lint | `npm run lint` | Exit 0 (recorded in Phase 3 verification). |
-| Typecheck | `npm run typecheck` | Exit 0 (recorded in Phase 3 verification). |
-| Full tests | `npm test` | Passed; 3 files, 22 tests (recorded in Phase 3 verification). |
-| Build | `npm run build` | Exit 0 (recorded in Phase 3 verification). |
-| Live startup/probes | `npm start` after build; `curl.exe --fail-with-body --silent --show-error` against `/api/health` and `/api/ready` | Earlier Phase 1 smoke recorded HTTP 200 for both routes. |
+| Install | `npm ci --no-audit --no-fund` | Exit 0; 335 packages restored from lockfile. |
+| Lint | `npm run lint` | Exit 0. |
+| Typecheck | `npm run typecheck` | Exit 0. |
+| Full tests | `npm test` | Passed; 6 files and 46 tests on Vitest 4.1.12. |
+| Build | `npm run build` | Exit 0. |
+| Live server/API checks | One-shot `node --import tsx --input-type=module` smoke using `startServer()` and HTTP fetch on port 43128 | Health and connected readiness HTTP 200; invalid registration HTTP 400 with `VALIDATION_ERROR` and `email`/`password` field errors; disconnected readiness HTTP 503 with no database details. Server closed cleanly. |
+| Full dependency audit | `npm audit` | Exit 0; 0 vulnerabilities. |
+| Production dependency audit | `npm audit --omit=dev` | Exit 0; 0 vulnerabilities. |
+| Working tree secret check | `git ls-files --error-unmatch .env`; `git check-ignore -v .env` | `.env` is not tracked and is ignored by `.gitignore`; no local `.env` file was present during this review. |
+
+Audit remediation: the previous audit found moderate `@vitest/mocker` path-traversal/mock-registration advisories and critical `tinypool` worker-option prototype-pollution/RCE advisories through Vitest 3.2.7. Updated the dev dependency to `vitest@^4.1.12` (Node >=20 supported, compatible with the project's Vite 7); the patched tree uses `@vitest/mocker@4.1.12` and no vulnerable `tinypool`. The full suite passes and both audits now report zero. This avoids npm's suggested forced Vitest 5 upgrade.
 
 ## Phase 2 verification record
 
@@ -81,10 +85,10 @@ SMTP delivery was not tested against a real provider. The API smoke run did not 
 | Install | `npm ci --no-audit --no-fund` | Exit 0; 339 packages restored. npm warned that the locked ESLint version is deprecated and that esbuild's install script is not approved by the local install-script policy. |
 | Lint | `npm run lint` | Passed; exit 0. |
 | Typecheck | `npm run typecheck` | Passed; exit 0. |
-| Tests | `npm test` | Passed; 3 files and 22 tests. |
+| Tests | `npm test` | Passed; 3 files and 23 tests. |
 | Build | `npm run build` | Passed; exit 0. |
 | Production dependency audit | `npm audit --omit=dev` | Passed; 0 production dependency vulnerabilities reported. |
-| Full dependency audit | `npm audit` | Exit 1; 3 development dependency findings (1 moderate, 2 critical) in the Vitest/`@vitest/mocker`/`tinypool` chain. npm's proposed forced fix is a breaking Vitest 5 upgrade; not changed in this task. |
+| Full dependency audit | `npm audit` | Historical Phase 3 run found 3 development dependency findings (1 moderate, 2 critical) in Vitest 3.2.7's `@vitest/mocker`/`tinypool` chain. Remediated during the B-2 re-verification by updating to Vitest 4.1.12; current audit exits 0 with 0 vulnerabilities, and all 46 tests pass. |
 | DEMO seed/cleanup | `npm run seed:demo`; `npm run seed:demo:clear` against a uniquely named local database | Passed; created DEMO draft records, removed manifest-owned records, preserved a separately inserted project, then dropped only the isolated test database. |
 | Publish/unpublish | `npx vitest run server/src/tests/portfolio.test.ts` | Passed; 1 file and 4 tests; also included in the passing full suite. |
 

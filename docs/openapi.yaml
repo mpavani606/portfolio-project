@@ -3,9 +3,10 @@ info:
   title: QM Portfolio API
   version: 0.3.0
   description: >-
-    Backend foundation, authentication, workspace onboarding, tenant-scoped portfolio
-    CMS, image uploads, and public portfolio endpoints. Unsafe requests require the
-    double-submit CSRF header.
+    B-2 backend foundation includes GET /api/health for liveness and GET /api/ready
+    for MongoDB readiness. Contract also covers authentication, workspace onboarding,
+    tenant-scoped portfolio CMS, image uploads, and public portfolio endpoints.
+    Unsafe requests require the double-submit CSRF header.
 servers:
   - url: http://localhost:3000
 tags:
