@@ -1,11 +1,11 @@
 # QM Portfolio --- Implementation Status
 
-Audit date: 2026-11-26. This status reflects the verified backend foundation, auth/workspace slice, and portfolio CMS/public API recorded in [ARCHITECTURE_BACKEND.md](ARCHITECTURE_BACKEND.md) and [API_CONTRACT.md](API_CONTRACT.md). Frontend work and the remaining product features are not started.
+Audit date: 2026-11-26. This status reflects the verified backend foundation, auth/workspace slice, and portfolio CMS/public API recorded in [ARCHITECTURE_BACKEND.md](ARCHITECTURE_BACKEND.md) and [API_CONTRACT.md](API_CONTRACT.md). The F-2 frontend foundation is implemented; later frontend phases and remaining product features are not started.
 
 | Phase | Backend | Frontend | Evidence / scope |
 |---:|---|---|---|
 | 0 | Verified | Not started | Backend repository audit documented; npm checks recorded. |
-| 1 | Verified | Not started | B-2 independently rechecked against `01_BACKEND_PROMPTS.md`; full suite passes on patched Vitest 4.1.12, live health/readiness/validation probes pass, and npm audit reports 0 vulnerabilities. |
+| 1 | Verified | Implemented | B-2 is verified; F-2 foundation implemented with lint, typecheck, frontend tests, and production build passing. See the F-2 verification record below. |
 | 2 | Verified | Not started | User, Tenant, and Session models; public registration with verification; workspace onboarding; tenant isolation. Public signup scope approved and blueprint updated. |
 | 3 | Verified | Not started | Profile, projects, skills, achievements, career, goals, owner CMS, uploads, publish controls, public APIs, contact inbox, and DEMO seed/cleanup. |
 | 4 | Not started | Not started | Admin account management/tools, including generated R1 IDs and initial credentials for administrator-provisioned accounts. |
@@ -100,3 +100,21 @@ The S3 code path has not been exercised against a cloud account. Asset responses
 - Use `Verified` only after running the relevant check successfully.
 - Record failed checks and blockers accurately.
 - Update this document after meaningful implementation work.
+
+
+## Frontend F-2 verification record
+
+**Status: Implemented.** The Phase 1 client foundation is present in `frontend/`: Vite proxy, API envelope/error handling, CSRF token bootstrap and header support, React Query provider, lazy React Router routes and three layouts, global error boundary, theme tokens and switch, accessible UI kit, responsive public navigation, development readiness page, and React Hook Form API field-error helper.
+
+| Check | Exact command | Result |
+|---|---|---|
+| Install | `cd frontend; npm install --no-audit --no-fund` | Exit 0; 282 packages added. npm reported the esbuild install-script approval notice. |
+| Lint | `cd frontend; npm run lint` | Exit 0, no warnings. |
+| Typecheck | `cd frontend; npm run typecheck` | Exit 0. |
+| Tests | `cd frontend; npm test` | Passed; 8 files and 25 tests on Vitest 4.1.12. |
+| Production build | `cd frontend; npm run build` | Exit 0; Vite 7.3.8 produced split page and app bundles. |
+| Format | `cd frontend; npm run format` | Exit 0. |
+
+The status-page tests exercise both the documented ready success envelope and the detail-safe 503 state. A local Vite HTTP smoke returned 200 HTML for /, /status, and /nonsense, confirming SPA fallback routing. The earlier proxy check without a backend process returned 500/ECONNREFUSED; the live readiness acceptance check was subsequently run with the existing backend app listening on localhost:3000 and Vite proxying `/api` requests to it. Its `MONGODB_URI` pointed to `127.0.0.1:27189`, which had no listener (isolated from any shared MongoDB service); after the connection attempt failed, `GET /api/ready` through the frontend returned HTTP 503 with `{ "success": false, "error": { "code": "INTERNAL", "message": "Service not ready" } }`. The response contained no MongoDB address, connection error, or database details.
+
+The responsive browser acceptance check used headless Chrome with DevTools device metrics emulating a 360 by 900 CSS viewport. `innerWidth`, document client width, and document scroll width were all 360; the Menu button was visible, navigation started collapsed (`display: none`), and clicking Menu opened it (`display: flex` with `data-open=true`). Both remaining F-2 acceptance checks passed under these recorded conditions.

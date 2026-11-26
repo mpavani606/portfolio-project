@@ -19,6 +19,32 @@ The API listens at `http://localhost:3000` by default. Liveness is `GET /api/hea
 
 The system probes take no request body. `GET /api/health` returns `200 {"success":true,"data":{"status":"ok"}}`. `GET /api/ready` returns `200 {"success":true,"data":{"status":"ready"}}` when MongoDB is connected, or a detail-free `503 {"success":false,"error":{"code":"INTERNAL","message":"Service not ready"}}`. See [the API contract](docs/API_CONTRACT.md) for methods, JSON examples, and [the OpenAPI schema](docs/openapi.yaml) for every route's request and response definitions.
 
+## Frontend client
+
+The React/Vite client lives in `frontend/`. It uses the same-origin `/api` path in browser code; Vite proxies that path to the API at `http://localhost:3000` during development. No API URL secret or private environment variable is exposed to the client.
+
+Run the backend first using the instructions above. In a second terminal:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173`. The development-only `/status` route calls the real `GET /api/ready` endpoint and shows a detail-safe readiness state. Unknown paths show the 404 page.
+
+Frontend checks, from `frontend/`:
+
+```powershell
+npm run lint
+npm run format
+npm run typecheck
+npm test
+npm run build
+```
+
+The GitHub Actions workflow runs these client checks from `frontend/` when frontend files change.
+
 ## Authentication and workspace flow
 
 1. `GET /api/auth/csrf` sets a readable `qm_csrf` cookie and returns its token.
