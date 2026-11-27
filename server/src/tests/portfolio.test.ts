@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../config/env.js";
 import app from "../app.js";
+import { imageUploadResponseSchema } from "../../../shared/portfolio.js";
 import { SessionModel } from "../models/session.js";
 import { TenantModel } from "../models/tenant.js";
 import { UserModel } from "../models/user.js";
@@ -562,10 +563,21 @@ describe("public portfolio and image/contact APIs", () => {
       .set("x-csrf-token", csrf)
       .attach("image", png, { filename: "cover.png", contentType: "image/png" })
       .expect(201);
-    expect(upload.body.data).toMatchObject({ width: 2, height: 2 });
+    expect(() => imageUploadResponseSchema.parse(upload.body.data)).not.toThrow();
+    expect(upload.body.data).toMatchObject({
+      assetId: expect.any(String),
+      key: expect.any(String),
+      url: expect.any(String),
+      width: 2,
+      height: 2,
+    });
     expect(upload.body.data.url).toContain(upload.body.data.key);
+
     const asset = await AssetModel.findOne({ key: upload.body.data.key });
+    expect(asset).not.toBeNull();
+    expect(upload.body.data.assetId).toBe(asset?._id.toString());
     expect(asset?.mimeType).toBe("image/webp");
+
     const assetPath = new URL(upload.body.data.url).pathname;
     await request(app).get(assetPath).expect(404);
 

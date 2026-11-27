@@ -53,6 +53,11 @@ export const profileInputSchema = z.object({
   defaultLocale: z.string().regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/).default("en"),
 });
 
+
+
+
+
+
 const projectFields = {
   title: z.string().trim().min(1).max(160),
   slug: projectSlugSchema,
@@ -64,6 +69,7 @@ const projectFields = {
   liveUrl: urlSchema.optional(),
   repoUrl: urlSchema.optional(),
   status: z.enum(["planning", "development", "testing", "completed", "on_hold", "cancelled"]).default("planning"),
+  confirmCompletion: z.boolean().optional(),
   featured: z.boolean().default(false),
   sortOrder: z.number().int().min(-100_000).max(100_000).default(0),
 };
@@ -73,9 +79,13 @@ export const projectUpdateSchema = nonEmptyUpdate(z.object({
   techStack: z.array(z.string().trim().min(1).max(50)).max(30),
   screenshots: z.array(objectIdSchema).max(10),
   status: z.enum(["planning", "development", "testing", "completed", "on_hold", "cancelled"]),
+  confirmCompletion: z.boolean(),
   featured: z.boolean(),
   sortOrder: z.number().int().min(-100_000).max(100_000),
-}));
+})).refine(
+  (value) => Object.keys(value).some((field) => field !== "confirmCompletion"),
+  { message: "Provide at least one project field other than confirmCompletion" },
+);
 
 const skillFields = {
   name: z.string().trim().min(1).max(100),
@@ -216,6 +226,16 @@ export const imageFileMetadataSchema = z.object({
   mimetype: z.enum(["image/jpeg", "image/png", "image/webp"]),
   size: z.number().int().min(1).max(5 * 1024 * 1024),
 });
+
+export const imageUploadResponseSchema = z.object({
+  assetId: objectIdSchema,
+  key: z.string(),
+  url: urlSchema,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+
+export type ImageUploadResponse = z.infer<typeof imageUploadResponseSchema>;
 
 export const publicAssetKeyParamsSchema = z.object({
   key: z.string().regex(/^[a-f\d]{24}-[a-f\d-]{36}\.webp$/i, "Invalid asset key"),

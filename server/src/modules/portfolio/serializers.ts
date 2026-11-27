@@ -8,6 +8,12 @@ import type {
   ProjectDocument,
   SkillDocument,
 } from "../../models/portfolio.js";
+import type {
+  BadgeDefinitionDocument,
+  ProjectMilestoneDocument,
+  ProjectReleaseDocument,
+  UserBadgeDocument,
+} from "../../models/timeline-badges.js";
 
 export function profileOwnerDto(profile: ProfileDocument) {
   return {
@@ -113,6 +119,7 @@ export function goalOwnerDto(goal: GoalDocument) {
 
 export function assetDto(asset: AssetDocument) {
   return {
+    assetId: asset._id.toString(),
     key: asset.key,
     url: asset.url,
     width: asset.width,
@@ -217,5 +224,120 @@ export function publicGoalDto(goal: GoalDocument) {
     status: goal.status,
     description: goal.description ?? null,
     relatedTechnologies: [...goal.relatedTechnologies],
+  };
+}
+
+export function projectMilestoneOwnerDto(milestone: ProjectMilestoneDocument) {
+  return {
+    id: milestone._id.toString(),
+    projectId: milestone.projectId.toString(),
+    stage: milestone.stage,
+    title: milestone.title,
+    description: milestone.description ?? null,
+    status: milestone.status,
+    startedAt: milestone.startedAt?.toISOString() ?? null,
+    completedAt: milestone.completedAt?.toISOString() ?? null,
+    notes: milestone.notes ?? null,
+    evidenceUrl: milestone.evidenceUrl ?? null,
+    sortOrder: milestone.sortOrder,
+    visibility: milestone.visibility,
+    createdAt: milestone.createdAt.toISOString(),
+    updatedAt: milestone.updatedAt.toISOString(),
+  };
+}
+
+export function projectMilestonePublicDto(milestone: ProjectMilestoneDocument) {
+  return {
+    stage: milestone.stage,
+    title: milestone.title,
+    description: milestone.description ?? null,
+    status: milestone.status,
+    startedAt: milestone.startedAt?.toISOString() ?? null,
+    completedAt: milestone.completedAt?.toISOString() ?? null,
+    evidenceUrl: milestone.evidenceUrl ?? null,
+    sortOrder: milestone.sortOrder,
+  };
+}
+
+export function projectReleaseOwnerDto(release: ProjectReleaseDocument) {
+  return {
+    id: release._id.toString(),
+    projectId: release.projectId.toString(),
+    version: release.version,
+    releaseDate: release.releaseDate.toISOString(),
+    summary: release.summary,
+    changes: release.changes.map(({ type, text }) => ({ type, text })),
+    links: release.links.map(({ label, url }) => ({ label, url })),
+    assets: release.assets.map((id) => id.toString()),
+    visibility: release.visibility,
+    createdAt: release.createdAt.toISOString(),
+    updatedAt: release.updatedAt.toISOString(),
+  };
+}
+
+export function projectReleasePublicDto(
+  release: ProjectReleaseDocument,
+  assetUrls: ReadonlyMap<string, string>,
+) {
+  return {
+    version: release.version,
+    releaseDate: release.releaseDate.toISOString(),
+    summary: release.summary,
+    changes: release.changes.map(({ type, text }) => ({ type, text })),
+    links: release.links.map(({ label, url }) => ({ label, url })),
+    assets: release.assets.map((id) => assetUrls.get(id.toString())).filter(
+      (url): url is string => url !== undefined,
+    ),
+  };
+}
+
+export function badgeDefinitionDto(definition: BadgeDefinitionDocument) {
+  return {
+    id: definition._id.toString(),
+    key: definition.key,
+    title: definition.title,
+    category: definition.category,
+    criteriaText: definition.criteriaText,
+    criteriaRule: definition.criteriaRule
+      ? { type: definition.criteriaRule.type, threshold: definition.criteriaRule.threshold }
+      : null,
+    iconKey: definition.iconKey,
+    active: definition.active,
+    platformWide: definition.tenantId === null,
+  };
+}
+
+export function userBadgeOwnerDto(
+  badge: UserBadgeDocument,
+  definition: BadgeDefinitionDocument | null,
+) {
+  return {
+    id: badge._id.toString(),
+    publicId: badge.publicId,
+    definition: definition ? badgeDefinitionDto(definition) : null,
+    issuedAt: badge.issuedAt.toISOString(),
+    evidenceUrl: badge.evidenceUrl ?? null,
+    evidenceNote: badge.evidenceNote ?? null,
+    verificationStatus: badge.verificationStatus,
+    visibility: badge.visibility,
+    revokedAt: badge.revokedAt?.toISOString() ?? null,
+    revokedReason: badge.revokedReason ?? null,
+  };
+}
+
+export function userBadgePublicDto(
+  badge: UserBadgeDocument,
+  definition: BadgeDefinitionDocument,
+) {
+  return {
+    publicId: badge.publicId,
+    key: definition.key,
+    title: definition.title,
+    category: definition.category,
+    criteriaText: definition.criteriaText,
+    iconKey: definition.iconKey,
+    issuedAt: badge.issuedAt.toISOString(),
+    evidenceUrl: badge.evidenceUrl ?? null,
+    verificationStatus: badge.verificationStatus,
   };
 }
