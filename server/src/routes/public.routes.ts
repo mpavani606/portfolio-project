@@ -9,6 +9,10 @@ import {
   type ContactMessageInput,
   type PublicListQuery,
 } from "../../../shared/portfolio.js";
+import {
+  publicBadgeParamsSchema,
+  publicTimelineParamsSchema,
+} from "../../../shared/timeline-badges.js";
 import { contactRateLimit } from "../middleware/contact-rate-limit.js";
 import { getValidated, validate } from "../middleware/validate.js";
 import { TenantModel } from "../models/tenant.js";
@@ -23,12 +27,21 @@ import {
   SkillModel,
 } from "../models/portfolio.js";
 import {
+  BadgeDefinitionModel,
+  ProjectMilestoneModel,
+  ProjectReleaseModel,
+  UserBadgeModel,
+} from "../models/timeline-badges.js";
+import {
   publicAchievementDto,
   publicCareerEntryDto,
   publicGoalDto,
   publicProfileDto,
   publicProjectDto,
   publicSkillDto,
+  projectMilestonePublicDto,
+  projectReleasePublicDto,
+  userBadgePublicDto,
 } from "../modules/portfolio/serializers.js";
 import { assetStorage } from "../modules/assets/storage.js";
 import { ApiError } from "../utils/api-error.js";
@@ -52,7 +65,7 @@ async function findPublishedPortfolio(slug: string) {
   return { tenantId: tenant._id, profile };
 }
 
-async function publicAssetUrls(
+export async function publicAssetUrls(
   tenantId: import("mongoose").Types.ObjectId,
   assetIds: Array<import("mongoose").Types.ObjectId | null | undefined>,
 ): Promise<Map<string, string>> {
@@ -75,7 +88,7 @@ router.get(
     }
 
     const assetId = asset._id;
-    const [activeTenant, profileReference, projectReference, achievementReference] = await Promise.all([
+    const [activeTenant, profileReference, projectReference, achievementReference, releaseProjectIds] = await Promise.all([
       TenantModel.exists({ _id: asset.tenantId, status: "active" }),
       ProfileModel.exists({
         tenantId: asset.tenantId,
@@ -93,8 +106,23 @@ router.get(
         visibility: "public",
         evidenceAsset: assetId,
       }),
+      ProjectReleaseModel.find({
+        tenantId: asset.tenantId,
+        visibility: "public",
+        assets: assetId,
+      }).distinct("projectId"),
     ]);
-    if (!activeTenant || (!profileReference && !projectReference && !achievementReference)) {
+    const releaseReference = releaseProjectIds.length > 0 && await ProjectModel.exists({
+      tenantId: asset.tenantId,
+      publishState: "published",
+      _id: { $in: releaseProjectIds },
+    });
+    if (!activeTenant || (
+      !profileReference
+      && !projectReference
+      && !achievementReference
+      && !releaseReference
+    )) {
       throw new ApiError(404, "NOT_FOUND", "Asset not found");
     }
 
@@ -175,6 +203,119 @@ router.get(
       ...project.screenshots,
     ]);
     ok(response, publicProjectDto(project, assetUrls));
+  },
+);
+
+router.get(
+  "/:slug/projects/:projectSlug/timeline",
+  validate(publicTimelineParamsSchema, "params"),
+  async (_request, response) => {
+    const { slug, projectSlug } = getValidated<{ slug: string; projectSlug: string }>(
+      response,
+      "params",
+    );
+    const { tenantId } = await findPublishedPortfolio(slug);
+    const project = await ProjectModel.findOne({
+      tenantId,
+      slug: projectSlug,
+      publishState: "published",
+    }).select("_id");
+    if (!project) {
+      throw new ApiError(404, "NOT_FOUND", "Project not found");
+    }
+    const milestones = await ProjectMilestoneModel.find({
+      tenantId,
+      projectId: project._id,
+      visibility: "public",
+    }).sort({ sortOrder: 1, startedAt: 1, createdAt: 1 });
+    ok(response, milestones.map(projectMilestonePublicDto));
+  },
+);
+
+router.get(
+  "/:slug/projects/:projectSlug/releases",
+  validate(publicTimelineParamsSchema, "params"),
+  async (_request, response) => {
+    const { slug, projectSlug } = getValidated<{ slug: string; projectSlug: string }>(
+      response,
+      "params",
+    );
+    const { tenantId } = await findPublishedPortfolio(slug);
+    const project = await ProjectModel.findOne({
+      tenantId,
+      slug: projectSlug,
+      publishState: "published",
+    }).select("_id");
+    if (!project) {
+      throw new ApiError(404, "NOT_FOUND", "Project not found");
+    }
+    const releases = await ProjectReleaseModel.find({
+      tenantId,
+      projectId: project._id,
+      visibility: "public",
+    }).sort({ releaseDate: -1, version: -1 });
+    const assetIds = releases.flatMap((release) => release.assets);
+    const assetUrls = await publicAssetUrls(tenantId, assetIds);
+    ok(response, releases.map((release) => projectReleasePublicDto(release, assetUrls)));
+  },
+);
+
+router.get(
+  "/:slug/badges",
+  validate(publicSlugParamsSchema, "params"),
+  async (_request, response) => {
+    const { slug } = getValidated<{ slug: string }>(response, "params");
+    const { tenantId } = await findPublishedPortfolio(slug);
+    const badges = await UserBadgeModel.find({
+      tenantId,
+      visibility: "public",
+      revokedAt: { $exists: false },
+    }).sort({ issuedAt: -1 });
+    const definitions = badges.length > 0
+      ? await BadgeDefinitionModel.find({
+        _id: { $in: badges.map((badge) => badge.badgeDefinitionId) },
+        active: true,
+        $or: [{ tenantId: null }, { tenantId }],
+      })
+      : [];
+    const definitionsById = new Map(definitions.map((definition) => [
+      definition._id.toString(),
+      definition,
+    ]));
+    ok(response, badges.flatMap((badge) => {
+      const definition = definitionsById.get(badge.badgeDefinitionId.toString());
+      return definition ? [userBadgePublicDto(badge, definition)] : [];
+    }));
+  },
+);
+
+router.get(
+  "/:slug/badges/:badgePublicId",
+  validate(publicBadgeParamsSchema, "params"),
+  async (_request, response) => {
+    const { slug, badgePublicId } = getValidated<{
+      slug: string;
+      badgePublicId: string;
+    }>(response, "params");
+    const { tenantId } = await findPublishedPortfolio(slug);
+    const badge = await UserBadgeModel.findOne({
+      tenantId,
+      publicId: badgePublicId,
+      visibility: "public",
+      revokedAt: { $exists: false },
+    });
+    if (!badge) {
+      throw new ApiError(404, "NOT_FOUND", "Badge not found");
+    }
+    const definition = await BadgeDefinitionModel.findOne({
+      _id: badge.badgeDefinitionId,
+      active: true,
+      $or: [{ tenantId: null }, { tenantId }],
+    });
+    if (!definition) {
+      throw new ApiError(404, "NOT_FOUND", "Badge not found");
+    }
+    ok(response, userBadgePublicDto(badge, definition));
   },
 );
 

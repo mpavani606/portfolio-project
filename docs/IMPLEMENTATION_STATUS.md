@@ -8,7 +8,7 @@ Audit date: 2026-11-26. This status reflects the verified backend foundation, au
 | 1 | Verified | Not started | B-2 independently rechecked against `01_BACKEND_PROMPTS.md`; full suite passes on patched Vitest 4.1.12, live health/readiness/validation probes pass, and npm audit reports 0 vulnerabilities. |
 | 2 | Verified | Not started | User, Tenant, and Session models; public registration with verification; workspace onboarding; tenant isolation. Public signup scope approved and blueprint updated. |
 | 3 | Verified | Not started | Profile, projects, skills, achievements, career, goals, owner CMS, uploads, publish controls, public APIs, contact inbox, and DEMO seed/cleanup. |
-| 4 | Not started | Not started | Admin account management/tools, including generated R1 IDs and initial credentials for administrator-provisioned accounts. |
+| 4 | Verified | Not started | B-5 project lifecycle timelines, chronological releases, badges, public badge verification, and tenant isolation. Manual release ordering is intentionally omitted per the fixed releaseDate/version ordering rule; milestones are reorderable. Admin account management remains future scope. |
 | 5 | Not started | Not started | Frontend profile management and dashboard. |
 | 6 | Not started | Not started | Frontend education management (backend uses CareerEntry with kind `education`). |
 | 7 | Not started | Not started | Frontend project management. |
@@ -93,6 +93,22 @@ SMTP delivery was not tested against a real provider. The API smoke run did not 
 | Publish/unpublish | `npx vitest run server/src/tests/portfolio.test.ts` | Passed; 1 file and 4 tests; also included in the passing full suite. |
 
 The S3 code path has not been exercised against a cloud account. Asset responses use the API endpoint (including for S3) so unpublished or suspended-workspace assets are not exposed through a direct public object URL.
+
+## B-5 completion record (Phase 4)
+
+**Status: VERIFIED.** B-5 adds tenant-scoped project milestones/releases and badge definitions/awards, shared Zod contracts, owner CRUD/public serializers, a six-definition idempotent seed, and Supertest coverage. User confirmed chronological release ordering: releases are always sorted by descending `releaseDate` then descending `version`; milestones have a `sortOrder` and manual reorder endpoint, while releases intentionally do not have a manual reorder operation.
+
+| Check | Exact command | Result |
+|---|---|---|
+| Targeted B-5 tests | `npx vitest run server/src/tests/timeline-badges.test.ts` | Passed; 1 file, 6 tests. Covers milestone date/stage validation, completion confirmation, release duplicate `409` field errors and ordering, private timeline/release filtering, badge issuance/revocation, automatic-award idempotency, six platform definitions, and tenant isolation for milestones/releases/awards. |
+| Full tests | `npm test` | Passed; 4 source files, 29 tests. Vitest is restricted to `server/src/tests/**/*.test.ts` so compiled `dist/` copies are not run a second time. |
+| Lint | `npm run lint` | Exit 0. |
+| Typecheck | `npm run typecheck` | Exit 0. |
+| Build | `npm run build` | Exit 0. |
+| OpenAPI syntax | Node.js `js-yaml` parse of `docs/openapi.yaml` | Parsed successfully; OpenAPI 3.1.0, 46 paths. |
+| Platform badge seed | `npm run seed:badges` twice against isolated database `qm-portfolio-b5-seed-final-20261126`; counted `badgedefinitions` where `tenantId: null` and checked the Open-Source Contributor rule | Both runs exited 0; final count was 6 and the Open-Source Contributor badge has no auto-award rule. The isolated database was dropped afterward. |
+| Full dependency audit | `npm audit` | Exit 0; 0 vulnerabilities. |
+| Production dependency audit | `npm audit --omit=dev` | Exit 0; 0 vulnerabilities. |
 
 ## Update rules
 

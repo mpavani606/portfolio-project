@@ -14,6 +14,7 @@
     "test": "vitest run",
     "build": "tsc",
     "seed:admin": "tsx server/src/seed/admin.ts",
+    "seed:badges": "tsx server/src/seed/badges.ts",
     "seed:demo": "tsx server/src/seed/demo.ts",
     "seed:demo:clear": "tsx server/src/seed/clear-demo.ts"
   },

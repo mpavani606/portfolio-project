@@ -1,23 +1,22 @@
 import type { HydratedDocument, Model, Types } from "mongoose";
-import type { TenantPortfolioRecord } from "../../models/portfolio.js";
 import { tenantScoped } from "../../utils/tenant-scoped.js";
 import type { TenantIsolationResource } from "./assert-tenant-isolation.js";
 
-export interface TenantModelIsolationFixture<T extends TenantPortfolioRecord> {
+export interface TenantModelIsolationFixture<T extends { tenantId: Types.ObjectId }> {
   model: Model<T>;
   build(value: string): Omit<Partial<T>, "tenantId">;
   getValue(document: HydratedDocument<T>): string;
   update(value: string): Partial<Omit<T, "tenantId">>;
 }
 
-function documentId<T extends TenantPortfolioRecord>(document: HydratedDocument<T>): string {
+function documentId<T extends { tenantId: Types.ObjectId }>(document: HydratedDocument<T>): string {
   if (!document._id) {
     throw new Error("Persisted tenant resource has no identifier");
   }
   return document._id.toString();
 }
 
-export function tenantModelIsolationResource<T extends TenantPortfolioRecord>(
+export function tenantModelIsolationResource<T extends { tenantId: Types.ObjectId }>(
   fixture: TenantModelIsolationFixture<T>,
 ): TenantIsolationResource {
   const scoped = tenantScoped(fixture.model);

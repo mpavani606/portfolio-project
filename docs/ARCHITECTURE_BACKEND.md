@@ -1,7 +1,7 @@
 # Backend Architecture and Implementation Audit
 
 Updated: 2026-11-26  
-Scope: Verified backend foundation, authentication/workspace onboarding, and Phase 3 portfolio CMS/public API. The original `backend/` directory remains unchanged.
+Scope: Verified backend foundation, authentication/workspace onboarding, portfolio CMS/public API, and B-5 project timelines/releases/badges. The original `backend/` directory remains unchanged.
 
 ## Current tree
 
@@ -25,6 +25,7 @@ server/src/
   models/
     index.ts
     portfolio.ts
+    timeline-badges.ts
     session.ts
     tenant.ts
     user.ts
@@ -40,11 +41,15 @@ server/src/
       owner-resource.ts
       relations.ts
       serializers.ts
+    badges/
+      award.service.ts
+      seed-platform-badges.ts
     mail-service.ts
   routes/
     auth.routes.ts
     onboarding.routes.ts
     owner-content.routes.ts
+    owner-timeline-badges.routes.ts
     owner-upload.routes.ts
     owner.routes.ts
     public.routes.ts
@@ -52,6 +57,7 @@ server/src/
     admin.ts
     clear-demo.ts
     demo.ts
+    badges.ts
   tests/
     app.test.ts
     auth.test.ts
@@ -61,6 +67,7 @@ server/src/
       assert-tenant-isolation.ts
       tenant-model-isolation.ts
     portfolio.test.ts
+    timeline-badges.test.ts
     setup.ts
   types/
     express.d.ts
@@ -78,6 +85,7 @@ shared/
   auth.ts
   onboarding.ts
   portfolio.ts
+  timeline-badges.ts
   user.ts
 .github/workflows/backend.yml
 ```
@@ -106,6 +114,11 @@ All implemented API routes use the global rate limiter. Unsafe methods require t
 | `GET /api/public/:slug/{skills,achievements,career,goals}` | Yes | Public | Shared Zod params/query | Active tenant and tenant-scoped published records; achievement visibility checked | Global | Per-resource public whitelist | working |
 | `POST /api/public/:slug/contact` | Yes | Public + CSRF | Shared Zod body; honeypot and length checks | Active tenant from requested public slug | Global + contact limiter | Accepted/message response only | working |
 | `GET /api/public/assets/:key` | Yes | Public | Shared Zod key | Asset must belong to active tenant and a published reference | Global | WebP bytes only | working |
+| `/api/owner/projects/:projectId/milestones` CRUD; `PATCH .../milestones/reorder` | Yes | Verified session + active tenant; CSRF for writes | Shared timeline Zod schemas | Every operation scopes tenant + parent project; reorder IDs checked within project | Global | Explicit milestone owner DTO | working |
+| `/api/owner/projects/:projectId/releases` CRUD | Yes | Verified session + active tenant; CSRF for writes | Shared release Zod schemas | Every operation scopes tenant + parent project; asset IDs checked against tenant | Global | Explicit release owner DTO | working |
+| `GET /api/owner/badges`; `POST /api/owner/badges/definitions`, `/award`; `POST /api/owner/badges/:id/revoke` | Yes | Verified session + active tenant; CSRF for writes | Shared badge Zod schemas | Definition scope and every UserBadge mutation use session tenant; platform definitions are read-only | Global | Owner badge/definition DTOs | working |
+| `GET /api/public/:slug/projects/:projectSlug/{timeline,releases}` | Yes | Public | Shared Zod slug/project params | Active tenant, published profile/project, and tenant-scoped children | Global | Public milestone/release allowlists; private notes omitted | working |
+| `GET /api/public/:slug/badges`, `GET .../badges/:badgePublicId` | Yes | Public | Shared Zod slug/public ID | Active tenant and published profile; only active definitions, public awards, and non-revoked records | Global | Public badge DTO; no tenant/evidence note/revocation reason | working |
 | Admin account management beyond bootstrap | No | Admin only, proposed | Missing | Missing | Missing | Missing | missing |
 | Score, QR, resume, timeline, analytics, certificate-verification workflows | No | Mixed, proposed | Missing | Missing | Missing | Missing | missing |
 | AI suggestions, collaboration, visitor feedback, reports, PDF export | No | Mixed or unspecified in blueprint | Missing | Missing | Missing | Missing | missing |
@@ -130,6 +143,10 @@ Resource list queries support pagination, search, status, and allowlisted sort k
 | ContactMessage | Yes | Yes | Tenant + status/created date; tenant + publish state |
 | Asset | Yes | Yes | Unique key; unique tenant + key; tenant + publish state |
 | DemoSeedManifest | Yes | Yes | Unique tenant + seed key |
+| ProjectMilestone | Yes | Yes | Tenant + project + order; tenant + project + visibility/stage |
+| ProjectRelease | Yes | Yes | Unique tenant + project + version; tenant + project + release date/version and visibility |
+| BadgeDefinition | Yes; platform definitions use `tenantId: null` | Nullable for platform-wide definitions | Globally unique key; tenant + active |
+| UserBadge | Yes | Yes | Unique tenant + definition (one award per badge); unique random public ID; tenant + visibility/revocation/issue date |
 | Tenant isolation fixture (tests only) | Yes | Yes | Test-only unique/indexed fixture fields |
 
 Portfolio models use Mongoose timestamps. All public routes serialize whitelisted values; Mongoose documents, tenant IDs, owner IDs, internal hashes, and contact IP hashes are not returned directly.
@@ -144,7 +161,11 @@ Portfolio models use Mongoose timestamps. All public routes serialize whiteliste
 - Verification status is limited to `owner_entered` or `evidence_provided`; a URL cannot produce an issuer-verified label.
 - S3 production storage uses the AWS default credential chain. Keep the bucket private and grant the server role only the needed object operations. Public delivery is proxied through the API and checks active tenant/published references. S3 integration was not live-tested against a cloud account.
 - Rate limiters use the process-local default store. Multi-instance deployments need a shared store and proxy/IP configuration review.
-- `npm audit` reports 3 development-tool findings (1 moderate in `@vitest/mocker`, 2 critical in `tinypool` through Vitest). `npm audit --omit=dev` reports none; npm's suggested fix is a breaking Vitest 5 upgrade, so the existing test-runner major was not changed in this feature task.
+- B-5 automatic badge criteria count only published portfolio evidence and public certificates so hidden records do not become indirectly disclosed through a public badge. Award statuses are set server-side; automatic awards are idempotent on a unique tenant/definition index, and public endpoints exclude private or revoked awards.
+- The seeded Open-Source Contributor badge is manual-only and requires reviewed evidence of an actual contribution; a repository URL by itself does not establish contributor status.
+- Project releases have a unique tenant/project/version index. Existing duplicate releases must be reconciled before deploying the new index; milestone/release rows whose parent project is deleted are removed by the project deletion hook.
+- Badge definitions are inserted idempotently by `npm run seed:badges`. Badge definition keys are globally unique, including platform-wide definitions; a colliding workspace key returns conflict. This phase does not write audit/revision records, so award/revoke operations do not require a multi-document transaction.
+- Current `npm audit` and `npm audit --omit=dev` both report zero vulnerabilities after upgrading Vitest to 4.1.12 in the B-2 verification pass.
 - Unique-index creation against legacy collections may fail if duplicate emails, slugs, owners, or privileged roles already exist. There is no migration runner or legacy data migration in this repository; back up and reconcile duplicates before deploying indexes to populated databases.
 - The project slug and profile unique indexes are new. Existing documents must be backfilled with valid per-tenant slugs and at most one profile before deploying to a populated database.
 - Demo seed/cleanup is restricted to a `demo-test-*` workspace in non-production. Cleanup deletes only IDs from the exact per-tenant manifest, but operators should still verify the selected slug before running it.
@@ -161,7 +182,7 @@ The blueprint defines releases rather than numbered phases. The numbered 0–16 
 | 1 | Express/TypeScript foundation, configuration, middleware, health/readiness, CI | Verified |
 | 2 | User/Tenant/Session models, authentication, verification, workspace onboarding, tenant isolation | Verified |
 | 3 | Profile, projects, skills, achievements, career, goals, owner CMS, uploads, public APIs, contact inbox | Verified |
-| 4 | Admin account management beyond initial bootstrap, including generated R1 IDs and initial credentials | Not started |
+| 4 | B-5 project timelines/releases and criteria-based badges; admin account management beyond initial bootstrap remains future scope | Verified |
 | 5 | Frontend profile/dashboard workflows | Not started |
 | 6 | Frontend education management | Not started |
 | 7 | Frontend project management | Not started |
@@ -187,9 +208,25 @@ Environment: Node `v26.8.2`, npm `11.19.1`; MongoDB was already available at `12
 | Tests | `npm test` | Passed; 3 files and 23 tests. Includes CRUD, tenant isolation for all portfolio models, public filtering/privacy, upload validation, contact rate limiting, production asset-origin validation, async-handler forwarding, and publish/unpublish behavior. |
 | Build | `npm run build` | Passed; exit 0. |
 | Production dependency audit | `npm audit --omit=dev` | Passed; 0 production dependency vulnerabilities reported. |
-| Full dependency audit | `npm audit` | Exit 1; reported 3 development dependency findings (1 moderate, 2 critical) in the Vitest/`@vitest/mocker`/`tinypool` chain. The suggested forced fix requires a breaking Vitest 5 upgrade; no test-runner major upgrade was made here. |
+| Full dependency audit | `npm audit` | Historical Phase 3 run reported 3 development dependency findings in Vitest 3.2.7. Remediated by the later upgrade to Vitest 4.1.12; the current full audit reports 0 vulnerabilities. |
 | DEMO seed/cleanup | `npm run seed:demo`; `npm run seed:demo:clear` against a uniquely named local database | Passed; created DEMO draft records, removed manifest-owned records, preserved a separately inserted project, then dropped only the isolated test database. |
 | Publish/unpublish flow | `npx vitest run server/src/tests/portfolio.test.ts` | Passed; 1 file and 4 tests. The full `npm test` suite also passed. |
+
+## B-5 verification record
+
+The user confirmed that release ordering remains chronological because the schema requires newest-first by release date then version. Milestones support manual reorder; releases intentionally do not have a manual reorder operation.
+
+| Check | Exact command | Result |
+|---|---|---|
+| B-5 integration | `npx vitest run server/src/tests/timeline-badges.test.ts` | Passed; 1 file, 6 tests for date/stage and completion validation, release conflicts/order, public privacy/revocation, automatic-award idempotency, seeded definitions, and tenant isolation. |
+| Full tests | `npm test` | Passed; 8 files and 58 tests. |
+| Lint | `npm run lint` | Exit 0. |
+| Typecheck | `npm run typecheck` | Exit 0. |
+| Build | `npm run build` | Exit 0. |
+| OpenAPI syntax | Node.js `js-yaml` parse of `docs/openapi.yaml` | Parsed successfully; OpenAPI 3.1.0, 46 paths. |
+| Badge seed | `npm run seed:badges` twice against isolated database `qm-portfolio-b5-seed-final-20261126` | Both runs exited 0; count remained six platform definitions, and Open-Source Contributor has no automatic rule; isolated database was dropped afterward. |
+| Full dependency audit | `npm audit` | Exit 0; 0 vulnerabilities. |
+| Production dependency audit | `npm audit --omit=dev` | Exit 0; 0 vulnerabilities. |
 
 ## Local commands
 

@@ -15,3 +15,23 @@ export {
   ProjectModel,
   SkillModel,
 } from "./portfolio.js";
+export {
+  BadgeDefinitionModel,
+  ProjectMilestoneModel,
+  ProjectReleaseModel,
+  UserBadgeModel,
+} from "./timeline-badges.js";
+export type {
+  BadgeCategory,
+  BadgeDefinition,
+  BadgeDefinitionDocument,
+  BadgeVerificationStatus,
+  MilestoneStatus,
+  ProjectMilestone,
+  ProjectMilestoneDocument,
+  ProjectRelease,
+  ProjectReleaseDocument,
+  ReleaseChangeType,
+  UserBadge,
+  UserBadgeDocument,
+} from "./timeline-badges.js";

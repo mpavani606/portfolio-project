@@ -41,6 +41,10 @@ import {
   SkillModel,
 } from "../models/portfolio.js";
 import {
+  ProjectMilestoneModel,
+  ProjectReleaseModel,
+} from "../models/timeline-badges.js";
+import {
   achievementOwnerDto,
   careerEntryOwnerDto,
   contactMessageOwnerDto,
@@ -55,6 +59,7 @@ import { ApiError } from "../utils/api-error.js";
 import { getTenantId } from "../utils/request-context.js";
 import { ok } from "../utils/response.js";
 import { tenantScoped } from "../utils/tenant-scoped.js";
+import { awardEligibleBadges } from "../modules/badges/award.service.js";
 
 const router = Router();
 
@@ -87,6 +92,15 @@ function assertDateOrder(
       [endField]: [`${endLabel} cannot precede its start date`],
     });
   }
+}
+
+function requireCompletionConfirmation(): never {
+  throw new ApiError(
+    400,
+    "VALIDATION_ERROR",
+    "Completing a project requires a done milestone or explicit confirmation",
+    { status: ["Add a done milestone or set confirmCompletion to true"] },
+  );
 }
 
 router.get("/profile", async (request, response) => {
@@ -182,17 +196,21 @@ registerOwnerResource(router, {
   createSchema: projectInputSchema,
   updateSchema: projectUpdateSchema,
   toCreate: (input: ProjectInput) => {
-    const { coverAsset, screenshots, ...fields } = input;
+    const fields = { ...input };
+    delete fields.confirmCompletion;
+    const { coverAsset, screenshots, ...projectFields } = fields;
     return {
-      ...fields,
+      ...projectFields,
       coverAsset: objectId(coverAsset),
       screenshots: screenshots.map((id) => new Types.ObjectId(id)),
     };
   },
   toUpdate: (input: ProjectUpdate) => {
-    const { coverAsset, screenshots, ...fields } = input;
+    const fields = { ...input };
+    delete fields.confirmCompletion;
+    const { coverAsset, screenshots, ...projectFields } = fields;
     return {
-      ...fields,
+      ...projectFields,
       ...(coverAsset !== undefined ? { coverAsset: objectId(coverAsset) } : {}),
       ...(screenshots !== undefined
         ? { screenshots: screenshots.map((id) => new Types.ObjectId(id)) }
@@ -206,18 +224,42 @@ registerOwnerResource(router, {
   statusValues: ["planning", "development", "testing", "completed", "on_hold", "cancelled"],
   uniqueField: "slug",
   defaultSort: { sortOrder: 1, createdAt: -1 },
-  beforeCreate: (tenantId, input) =>
-    assertTenantAssets(tenantId, [input.coverAsset, ...input.screenshots]),
-  beforeUpdate: (tenantId, input) =>
-    assertTenantAssets(tenantId, [
-      input.coverAsset,
-      ...(input.screenshots ?? []),
-    ]),
+  beforeCreate: async (tenantId, input) => {
+    await assertTenantAssets(tenantId, [input.coverAsset, ...input.screenshots]);
+    if (input.status === "completed" && !input.confirmCompletion) {
+      requireCompletionConfirmation();
+    }
+  },
+  beforeUpdate: async (tenantId, input, id) => {
+    await assertTenantAssets(tenantId, [input.coverAsset, ...(input.screenshots ?? [])]);
+    if (input.status === "completed" && !input.confirmCompletion) {
+      const project = await ProjectModel.findOne({ _id: id, tenantId }).select("_id");
+      if (!project) {
+        throw new ApiError(404, "NOT_FOUND", "Project not found");
+      }
+      const doneMilestone = await ProjectMilestoneModel.exists({
+        tenantId,
+        projectId: id,
+        status: "done",
+      });
+      if (!doneMilestone) {
+        requireCompletionConfirmation();
+      }
+    }
+  },
   beforeDelete: async (tenantId, id) => {
     await SkillModel.updateMany(
       { tenantId },
       { $pull: { evidenceProjectIds: new Types.ObjectId(id) } },
     );
+  },
+  afterCreate: (tenantId) => awardEligibleBadges(tenantId),
+  afterUpdate: (tenantId) => awardEligibleBadges(tenantId),
+  afterDelete: async (tenantId, id) => {
+    await Promise.all([
+      ProjectMilestoneModel.deleteMany({ tenantId, projectId: id }),
+      ProjectReleaseModel.deleteMany({ tenantId, projectId: id }),
+    ]);
   },
 });
 
@@ -247,6 +289,8 @@ registerOwnerResource(router, {
   beforeCreate: (tenantId, input) => assertTenantProjects(tenantId, input.evidenceProjectIds),
   beforeUpdate: (tenantId, input) =>
     assertTenantProjects(tenantId, input.evidenceProjectIds ?? []),
+  afterCreate: (tenantId) => awardEligibleBadges(tenantId),
+  afterUpdate: (tenantId) => awardEligibleBadges(tenantId),
 });
 
 registerOwnerResource(router, {
@@ -291,6 +335,8 @@ registerOwnerResource(router, {
       "Expiry date",
     );
   },
+  afterCreate: (tenantId) => awardEligibleBadges(tenantId),
+  afterUpdate: (tenantId) => awardEligibleBadges(tenantId),
 });
 
 registerOwnerResource(router, {

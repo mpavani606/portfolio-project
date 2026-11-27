@@ -35,6 +35,15 @@ export interface OwnerResourceOptions<
     id: string,
   ): Promise<void>;
   beforeDelete?(tenantId: import("mongoose").Types.ObjectId, id: string): Promise<void>;
+  afterCreate?(
+    tenantId: import("mongoose").Types.ObjectId,
+    document: HydratedDocument<T>,
+  ): Promise<void>;
+  afterUpdate?(
+    tenantId: import("mongoose").Types.ObjectId,
+    document: HydratedDocument<T>,
+  ): Promise<void>;
+  afterDelete?(tenantId: import("mongoose").Types.ObjectId, id: string): Promise<void>;
 }
 
 function isDuplicateKeyError(error: unknown): boolean {
@@ -137,6 +146,7 @@ export function registerOwnerResource<
       await options.beforeCreate?.(tenantId, input);
       try {
         const document = await scoped.create(tenantId, options.toCreate(input));
+        await options.afterCreate?.(tenantId, document);
         response.status(201);
         ok(response, options.serialize(document));
       } catch (error) {
@@ -181,6 +191,7 @@ export function registerOwnerResource<
       if (!document) {
         throw new ApiError(404, "NOT_FOUND", "Resource not found");
       }
+      await options.afterUpdate?.(tenantId, document);
       ok(response, options.serialize(document));
     },
   );
@@ -210,6 +221,7 @@ export function registerOwnerResource<
       if (!document) {
         throw new ApiError(404, "NOT_FOUND", "Resource not found");
       }
+      await options.afterUpdate?.(tenantId, document);
       ok(response, options.serialize(document));
     }) as RequestHandler,
   );
@@ -225,6 +237,7 @@ export function registerOwnerResource<
       if (deleted.deletedCount === 0) {
         throw new ApiError(404, "NOT_FOUND", "Resource not found");
       }
+      await options.afterDelete?.(tenantId, id);
       ok(response, { deleted: true });
     },
   );

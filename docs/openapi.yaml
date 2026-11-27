@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: QM Portfolio API
-  version: 0.3.0
+  version: 0.4.0
   description: >-
     B-2 backend foundation includes GET /api/health for liveness and GET /api/ready
     for MongoDB readiness. Contract also covers authentication, workspace onboarding,
     tenant-scoped portfolio CMS, image uploads, and public portfolio endpoints.
-    Unsafe requests require the double-submit CSRF header.
+    Unsafe requests require the double-submit CSRF header. B-5 adds tenant-scoped
+    project milestones/releases and criteria-based badges with public verification routes.
 servers:
   - url: http://localhost:3000
 tags:
@@ -762,6 +763,432 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/owner/projects/{projectId}/milestones:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-fA-F0-9]{24}$"
+    get:
+      tags: [Owner]
+      summary: List milestones for a project in the authenticated workspace
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Owner milestone DTOs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineListResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Owner]
+      summary: Create a project milestone
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectMilestoneInput"
+      responses:
+        "201":
+          description: Created milestone DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/projects/{projectId}/milestones/reorder:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-fA-F0-9]{24}$"
+    patch:
+      tags: [Owner]
+      summary: Reorder milestones within the project
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [milestones]
+              properties:
+                milestones:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [id, sortOrder]
+                    properties:
+                      id:
+                        type: string
+                        pattern: "^[a-fA-F0-9]{24}$"
+                      sortOrder:
+                        type: integer
+      responses:
+        "200":
+          description: Reordered owner milestone DTOs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineListResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/projects/{projectId}/milestones/{id}:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-fA-F0-9]{24}$"
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      tags: [Owner]
+      summary: Get a milestone owned by the authenticated workspace
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Owner milestone DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Owner]
+      summary: Update an owned project milestone
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectMilestoneUpdate"
+      responses:
+        "200":
+          description: Updated milestone DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Owner]
+      summary: Delete an owned project milestone
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/projects/{projectId}/releases:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-fA-F0-9]{24}$"
+    get:
+      tags: [Owner]
+      summary: List project releases newest-first
+      description: Ordered by releaseDate descending, then version descending.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Owner release DTOs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineListResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Owner]
+      summary: Create a semantic-versioned project release
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectReleaseInput"
+      responses:
+        "201":
+          description: Created release DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: A release with this version already exists for the project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/owner/projects/{projectId}/releases/{id}:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-fA-F0-9]{24}$"
+      - $ref: "#/components/parameters/ResourceId"
+    get:
+      tags: [Owner]
+      summary: Get a release owned by the authenticated workspace
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Owner release DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Owner]
+      summary: Update an owned project release
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectReleaseUpdate"
+      responses:
+        "200":
+          description: Updated release DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Owner]
+      summary: Delete an owned project release
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Deleted"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/owner/badges:
+    get:
+      tags: [Owner]
+      summary: List workspace badge awards and active definitions
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Owner badge and definition collection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadgeCollectionResponse"
+  /api/owner/badges/definitions:
+    post:
+      tags: [Owner]
+      summary: Define a workspace badge
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BadgeDefinitionInput"
+      responses:
+        "201":
+          description: Created badge definition DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/owner/badges/award:
+    post:
+      tags: [Owner]
+      summary: Manually award a badge with an evidence link or note
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BadgeAwardInput"
+      responses:
+        "201":
+          description: Created badge award DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/owner/badges/{id}/revoke:
+    parameters:
+      - $ref: "#/components/parameters/ResourceId"
+    post:
+      tags: [Owner]
+      summary: Revoke an active badge award
+      security:
+        - sessionCookie: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BadgeRevokeInput"
+      responses:
+        "200":
+          description: Revoked badge award DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioObjectResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/projects/{projectSlug}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/PublicSlug"
+      - name: projectSlug
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 80
+    get:
+      tags: [Public Portfolio]
+      summary: List public milestones of a published project
+      security: []
+      responses:
+        "200":
+          description: Public milestone DTOs; owner notes are omitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineListResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/projects/{projectSlug}/releases:
+    parameters:
+      - $ref: "#/components/parameters/PublicSlug"
+      - name: projectSlug
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 80
+    get:
+      tags: [Public Portfolio]
+      summary: List public releases of a published project newest-first
+      security: []
+      responses:
+        "200":
+          description: Public release DTOs with allowlisted fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineListResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/badges:
+    parameters:
+      - $ref: "#/components/parameters/PublicSlug"
+    get:
+      tags: [Public Portfolio]
+      summary: List active, public, unrevoked badge awards
+      security: []
+      responses:
+        "200":
+          description: Public badge DTOs only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicBadgeListResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/{slug}/badges/{badgePublicId}:
+    parameters:
+      - $ref: "#/components/parameters/PublicSlug"
+      - name: badgePublicId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{20,64}$"
+    get:
+      tags: [Public Portfolio]
+      summary: Verify and retrieve one active public badge award
+      security: []
+      responses:
+        "200":
+          description: Public badge DTO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicBadgeResponse"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/owner/messages:
     get:
       tags: [Owner]
@@ -855,7 +1282,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PortfolioObjectResponse"
+                $ref: "#/components/schemas/AssetUploadResponse"
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -1089,6 +1516,271 @@ components:
         maximum: 100
         default: 20
   schemas:
+    ProjectMilestoneFields:
+      type: object
+      properties:
+        stage:
+          type: string
+          enum: [planning, development, testing, completed, on_hold, cancelled]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 5000
+        status:
+          type: string
+          enum: [pending, in_progress, done]
+        startedAt:
+          type: string
+          format: date
+        completedAt:
+          type: string
+          format: date
+        notes:
+          type: string
+          maxLength: 5000
+        evidenceUrl:
+          type: string
+          format: uri
+        sortOrder:
+          type: integer
+        visibility:
+          type: string
+          enum: [public, private]
+    ProjectMilestoneInput:
+      allOf:
+        - $ref: "#/components/schemas/ProjectMilestoneFields"
+      required: [stage, title]
+    ProjectMilestoneUpdate:
+      allOf:
+        - $ref: "#/components/schemas/ProjectMilestoneFields"
+      minProperties: 1
+    ProjectReleaseFields:
+      type: object
+      properties:
+        version:
+          type: string
+          maxLength: 100
+          pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+        releaseDate:
+          type: string
+          format: date
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        changes:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [type, text]
+            properties:
+              type:
+                type: string
+                enum: [added, changed, fixed, removed]
+              text:
+                type: string
+                minLength: 1
+                maxLength: 500
+        links:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [label, url]
+            properties:
+              label:
+                type: string
+                minLength: 1
+                maxLength: 80
+              url:
+                type: string
+                format: uri
+        assets:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            pattern: "^[a-fA-F0-9]{24}$"
+        visibility:
+          type: string
+          enum: [public, private]
+    ProjectReleaseInput:
+      allOf:
+        - $ref: "#/components/schemas/ProjectReleaseFields"
+      required: [version, releaseDate, summary]
+    ProjectReleaseUpdate:
+      allOf:
+        - $ref: "#/components/schemas/ProjectReleaseFields"
+      minProperties: 1
+    BadgeDefinitionInput:
+      type: object
+      required: [key, title, category, criteriaText, iconKey]
+      properties:
+        key:
+          type: string
+          minLength: 3
+          maxLength: 80
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        category:
+          type: string
+          enum: [certificate, hackathon, project, learning, open_source, coding]
+        criteriaText:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        criteriaRule:
+          type: object
+          required: [type, threshold]
+          properties:
+            type:
+              type: string
+              enum: [completed_projects, published_projects, projects_with_repo, certificates_added, completed_skills]
+            threshold:
+              type: integer
+              minimum: 1
+              maximum: 1000
+        iconKey:
+          type: string
+          enum: [award, certificate, code, github, project, star, trophy, book]
+        active:
+          type: boolean
+    BadgeAwardInput:
+      type: object
+      required: [definitionId]
+      anyOf:
+        - required: [evidenceUrl]
+        - required: [evidenceNote]
+      properties:
+        definitionId:
+          type: string
+          pattern: "^[a-fA-F0-9]{24}$"
+        evidenceUrl:
+          type: string
+          format: uri
+        evidenceNote:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        visibility:
+          type: string
+          enum: [public, private]
+    BadgeRevokeInput:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    TimelineListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    BadgeCollectionResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [definitions, badges]
+          properties:
+            definitions:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            badges:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+    PublicBadgeDto:
+      type: object
+      required: [publicId, key, title, category, criteriaText, iconKey, issuedAt, verificationStatus]
+      properties:
+        publicId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{20,64}$"
+        key:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+          enum: [certificate, hackathon, project, learning, open_source, coding]
+        criteriaText:
+          type: string
+        iconKey:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+        evidenceUrl:
+          type: [string, "null"]
+          format: uri
+        verificationStatus:
+          type: string
+          enum: [owner_awarded, evidence_provided, issuer_verified]
+    PublicBadgeListResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicBadgeDto"
+    PublicBadgeResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          $ref: "#/components/schemas/PublicBadgeDto"
+    AssetUploadResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          const: true
+        data:
+          type: object
+          required: [assetId, key, url, width, height]
+          properties:
+            assetId:
+              type: string
+              pattern: "^[a-fA-F0-9]{24}$"
+              description: MongoDB Asset document ObjectId encoded as a string.
+            key:
+              type: string
+            url:
+              type: string
+              format: uri
+            width:
+              type: integer
+              minimum: 1
+            height:
+              type: integer
+              minimum: 1
     HealthResponse:
       type: object
       required: [success, data]
@@ -1378,6 +2070,9 @@ components:
         status:
           type: string
           enum: [planning, development, testing, completed, on_hold, cancelled]
+        confirmCompletion:
+          type: boolean
+          description: Explicitly confirms completion when no done milestone exists.
         featured:
           type: boolean
         sortOrder:
